@@ -1,0 +1,167 @@
+
+
+
+```{r}
+library(shiny)
+library(tidyverse)  # for data manipulation and graphics
+library(tidytext)   # for text mining
+library(DT)         # to render Data Tables nicely
+library(plotly) 
+
+tbl <- read_csv(file = "harry_potter_books.csv.crdownload", col_types = "ccc")
+
+# vector with names of books
+book_names = unique(tbl$book)
+
+# tokenization
+tbl_tokens = tbl |> 
+  unnest_tokens(word, text)
+
+tbl_tokens
+#tbl
+
+
+```
+```{r}
+# AFINN lexicon (numeric sentiment scores)
+afinn_lexicon <- get_sentiments("afinn")
+
+# NRC lexicon (multiple emotions)
+nrc_lexicon <- get_sentiments("nrc")
+```
+
+```{r}
+tbl_tokens %>%
+        anti_join(stop_words) %>%
+        count(word) %>%
+        #with(wordcloud(word, n, max.words = 100))
+        arrange(desc(n))
+
+```
+```{r}
+    sentiment_scores_by_book_section <- tbl_tokens %>%
+      left_join(sentiment_lexicon, by = "word") %>%
+      mutate(sentiment = case_when(
+        sentiment == "positive" ~ 1,
+        sentiment == "negative" ~ -1,
+        TRUE ~ 0
+      )) %>% 
+      #group_by(book) %>% 
+      mutate(linenumber = row_number()) %>% 
+      #ungroup() %>% 
+      mutate(section = (linenumber %/% 300) + 1) %>% 
+      group_by(book, section, word) %>% 
+      summarize(score = sum(sentiment == 0)) %>%
+      arrange(desc(score))
+      
+    sentiment_scores_by_book_section  #%>%
+      
+```
+
+
+
+```{r}
+bing = read_csv("bing.csv")
+afinn = read_csv("afinn.csv")
+nrc = read_csv("nrc.csv")
+loughran = read_csv("loughran.csv")
+
+head(bing, n=5)
+```
+
+```{r}
+# bing_word_counts <- tbl_tokens %>%
+#   inner_join(get_sentiments("bing")) %>%
+#   count(word, sentiment, sort = TRUE) %>%
+#   ungroup()
+
+# bing_word_counts <- tbl_tokens %>%
+#   inner_join(get_sentiments("bing"), by = "word") %>% # Join to get sentiment info
+#   group_by(book, chapter, word, sentiment) %>%       # Group by original columns + sentiment
+#   tally(name = "count", sort = TRUE) %>%             # Count occurrences
+#   ungroup()
+
+tbl_tokens_ordered <- tbl_tokens %>%
+  mutate(order = row_number())  # Assign an increasing index based on the original row order
+
+# Step 2: Perform sentiment analysis without altering the original order
+bing_word_counts <- tbl_tokens_ordered %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%  # Join with sentiment lexicon
+  arrange(order)     
+
+bing_word_counts
+```
+```{r}
+tbl_tokens_ordered <- tbl_tokens %>%
+  mutate(order = row_number())  # Assign a sequential index based on the original row order
+
+# Step 3: Perform a left join to keep all rows from tbl_tokens and add sentiment information
+bing_word_counts <- tbl_tokens_ordered %>%
+  left_join(get_sentiments("bing"), by = "word") %>%  # Left join to keep all rows from tbl_tokens
+  arrange(order)
+
+bing_word_counts
+
+```
+```{r}
+#trying to see where the books switch 
+
+book_counts <- bing_word_counts %>%
+  group_by(book) %>%
+  summarise(count = n())  %>%
+  mutate(cumulative_count = cumsum(count))
+
+
+print(book_counts)
+
+```
+
+```{r}
+
+  
+  diff <- 50
+  num_total_words <- nrow(tbl_tokens)
+  
+  lexicon <- "bing"
+  
+  section_vec <- c()
+  sentiment_sum_vec <- c()
+  
+  start <- 1
+  section_index <- 1
+  
+  while (start <= num_total_words) {
+    
+    end <- min(start + diff - 1, num_total_words)
+    
+    tbl_tokens_section <- tbl_tokens[start:end, ]
+    
+    sentiment_scores <- tbl_tokens_section %>%
+      left_join(get_sentiments(lexicon), by = "word") %>%
+      mutate(sentiment = case_when(
+        sentiment == "positive" ~ 1,
+        sentiment == "negative" ~ -1,
+        is.na(sentiment) ~ 0
+      ))
+    
+    section_vec <- c(section_vec, section_index)
+    sentiment_sum_vec <- c(sentiment_sum_vec, sum(sentiment_scores$sentiment, na.rm = TRUE))
+    
+    start <- start + diff
+    section_index <- section_index + 1
+  }
+  
+  section_sentiment <- data.frame(section = section_vec, sentiment = sentiment_sum_vec)
+  
+  ggplot(section_sentiment, aes(x = sentiment, y = factor(section))) +
+    geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+    labs(title = "Sentiment Score by Section", x = "Sentiment Score", y = "Section") +
+    theme_minimal() +
+    coord_flip()
+
+  # ggplot(section_sentiment, aes(x = section, y = sentiment)) +
+  #   geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  #   labs(title = "Sentiment Score by Section", x = "Section", y = "Sentiment Score") +
+  #   theme_minimal()
+
+```
